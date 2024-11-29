@@ -20,11 +20,7 @@ import pandas as pd
 import base64
 from datetime import datetime
 from custom_parser import CustomResumeParser
-from pdfminer.layout import LAParams
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfinterp import PDFResourceManager
-from pdfminer.pdfinterp import PDFPageInterpreter
-from pdfminer.converter import TextConverter
+from pdfminer.high_level import extract_text
 import io
 from streamlit_tags import st_tags
 from PIL import Image
@@ -41,23 +37,9 @@ def get_table_download_link(df: pd.DataFrame, filename: str, text: str) -> str:
     return href
 
 def pdf_reader(file):
-    resource_manager = PDFResourceManager()
-    fake_file_handle = io.StringIO()
-    converter = TextConverter(resource_manager, fake_file_handle, laparams=LAParams())
-    page_interpreter = PDFPageInterpreter(resource_manager, converter)
-    with open(file, 'rb') as fh:
-        for page in PDFPage.get_pages(fh,
-                                      caching=True,
-                                      check_extractable=True):
-            page_interpreter.process_page(page)
-            print(page)
-        text = fake_file_handle.getvalue()
-
-    # close open handles
-    converter.close()
-    fake_file_handle.close()
+    """Extract text from PDF file"""
+    text = extract_text(file)
     return text
-
 
 def show_pdf(file_path):
     with open(file_path, "rb") as f:
