@@ -3,54 +3,35 @@ import re
 from spacy.matcher import Matcher
 import nltk
 from nltk.corpus import stopwords
-from pdfminer3.layout import LAParams, LTTextBox
-from pdfminer3.pdfpage import PDFPage
-from pdfminer3.pdfinterp import PDFResourceManager
-from pdfminer3.pdfinterp import PDFPageInterpreter
-from pdfminer3.converter import TextConverter
+from pdfminer.high_level import extract_text
+from pdfminer.layout import LAParams
 import io
+import docx2txt
+from typing import Optional
 
 class CustomResumeParser:
-    def __init__(self, resume_path):
+    def __init__(self, resume_path: str):
         self.resume_path = resume_path
         self.nlp = spacy.load('en_core_web_sm')
         self.matcher = Matcher(self.nlp.vocab)
         self.text = ''
         
-        # Get number of pages
-        self.no_of_pages = 0
-        with open(resume_path, 'rb') as file:
-            for page in PDFPage.get_pages(file):
-                self.no_of_pages += 1
-        
-        # Extract text from PDF
-        self.text = self.extract_text_from_pdf()
+        # Get number of pages and extract text
+        if resume_path.lower().endswith('.pdf'):
+            self.text = extract_text(resume_path)
+            self.no_of_pages = len(self.text.split('\f')) - 1  # Count form feeds
+            if self.no_of_pages == 0:
+                self.no_of_pages = 1
+        elif resume_path.lower().endswith('.docx'):
+            self.text = docx2txt.process(resume_path)
+            self.no_of_pages = 1  # Approximate for Word docs
+        else:
+            raise ValueError("Unsupported file format. Please use PDF or DOCX files.")
                 
         # Process the text with spaCy
         self.doc = self.nlp(self.text)
     
-    def extract_text_from_pdf(self):
-        # Extract text from pdf file
-        with open(self.resume_path, 'rb') as fh:
-            # PDFMiner boilerplate
-            rsrcmgr = PDFResourceManager()
-            sio = io.StringIO()
-            codec = 'utf-8'
-            laparams = LAParams()
-            device = TextConverter(rsrcmgr, sio, codec=codec, laparams=laparams)
-            interpreter = PDFPageInterpreter(rsrcmgr, device)
-
-            for page in PDFPage.get_pages(fh, caching=True, check_extractable=True):
-                interpreter.process_page(page)
-
-            text = sio.getvalue()
-
-            device.close()
-            sio.close()
-
-            return text
-        
-    def get_extracted_data(self):
+    def get_extracted_data(self) -> dict:
         data = {
             'name': self.extract_name(),
             'email': self.extract_email(),
@@ -62,26 +43,26 @@ class CustomResumeParser:
         }
         return data
         
-    def extract_name(self):
+    def extract_name(self) -> str:
         # Simple name extraction using named entity recognition
         for ent in self.doc.ents:
             if ent.label_ == 'PERSON':
                 return ent.text
         return ''
         
-    def extract_email(self):
+    def extract_email(self) -> str:
         # Extract email using regex
         email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
         emails = re.findall(email_pattern, self.text)
         return emails[0] if emails else ''
         
-    def extract_mobile_number(self):
+    def extract_mobile_number(self) -> str:
         # Extract phone number using regex
         phone_pattern = r'[\+\(]?[1-9][0-9 .\-\(\)]{8,}[0-9]'
         numbers = re.findall(phone_pattern, self.text)
         return numbers[0] if numbers else ''
         
-    def extract_skills(self):
+    def extract_skills(self) -> list:
         # Common programming languages and technologies
         skills_pattern = [
             'python', 'java', 'c++', 'javascript', 'html', 'css', 'sql',
@@ -98,7 +79,7 @@ class CustomResumeParser:
                 
         return list(set(found_skills))
         
-    def extract_education(self):
+    def extract_education(self) -> list:
         # Education-related keywords
         education_pattern = [
             'bachelor', 'master', 'phd', 'b.tech', 'm.tech', 'degree',
@@ -114,7 +95,7 @@ class CustomResumeParser:
                     
         return list(set(education))
         
-    def extract_experience(self):
+    def extract_experience(self) -> list:
         # Experience-related keywords
         exp_pattern = [
             'experience', 'work', 'job', 'company', 'position',
