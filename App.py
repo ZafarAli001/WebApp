@@ -20,7 +20,7 @@ import pandas as pd
 import base64
 from datetime import datetime
 from custom_parser import CustomResumeParser
-from pdfminer.high_level import extract_text
+from pdfminer.six.high_level import extract_text
 import io
 from streamlit_tags import st_tags
 from PIL import Image
@@ -42,62 +42,11 @@ def pdf_reader(file):
     return text
 
 def show_pdf(file_path):
+    """Display PDF in Streamlit"""
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    # pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf">'
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
-
-
-def course_recommender(course_list):
-    st.subheader("**Courses & Certificates🎓 Recommendations**")
-    c = 0
-    rec_course = []
-    no_of_reco = st.slider('Choose Number of Course Recommendations:', 1, 10, 4)
-    random.shuffle(course_list)
-    for c_name, c_link in course_list:
-        c += 1
-        st.markdown(f"({c}) [{c_name}]({c_link})")
-        rec_course.append(c_name)
-        if c == no_of_reco:
-            break
-    return rec_course
-
-
-# Database connection - Make it optional
-try:
-    connection = pymysql.connect(
-        host=st.secrets.get("DB_HOST", "localhost"),
-        user=st.secrets.get("DB_USER", "root"),
-        password=st.secrets.get("DB_PASSWORD", ""),
-        database=st.secrets.get("DB_NAME", "sra")
-    )
-    cursor = connection.cursor()
-    st.success("Database connected successfully!")
-except Exception as e:
-    connection = None
-    cursor = None
-    st.warning("Database connection failed. The app will work without saving data.")
-
-
-def insert_data(name, email, res_score, timestamp, no_of_pages, reco_field, cand_level, skills, recommended_skills,
-                courses):
-    if connection is not None:
-        DB_table_name = 'user_data'
-        insert_sql = "insert into " + DB_table_name + """
-        values (0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
-        rec_values = (
-        name, email, str(res_score), timestamp, str(no_of_pages), reco_field, cand_level, skills, recommended_skills,
-        courses)
-        cursor.execute(insert_sql, rec_values)
-        connection.commit()
-
-
-st.set_page_config(
-    page_title="Smart Resume Analyzer",
-    page_icon='./Logo/SRA_Logo.ico',
-)
-
 
 def run():
     st.title("Smart Resume Analyser")
@@ -448,5 +397,53 @@ def run():
             else:
                 st.error("Wrong ID & Password Provided")
 
+
+# Database connection - Make it optional
+try:
+    connection = pymysql.connect(
+        host=st.secrets.get("DB_HOST", "localhost"),
+        user=st.secrets.get("DB_USER", "root"),
+        password=st.secrets.get("DB_PASSWORD", ""),
+        database=st.secrets.get("DB_NAME", "sra")
+    )
+    cursor = connection.cursor()
+    st.success("Database connected successfully!")
+except Exception as e:
+    connection = None
+    cursor = None
+    st.warning("Database connection failed. The app will work without saving data.")
+
+
+def insert_data(name, email, res_score, timestamp, no_of_pages, reco_field, cand_level, skills, recommended_skills,
+                courses):
+    if connection is not None:
+        DB_table_name = 'user_data'
+        insert_sql = "insert into " + DB_table_name + """
+        values (0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+        rec_values = (
+        name, email, str(res_score), timestamp, str(no_of_pages), reco_field, cand_level, skills, recommended_skills,
+        courses)
+        cursor.execute(insert_sql, rec_values)
+        connection.commit()
+
+
+st.set_page_config(
+    page_title="Smart Resume Analyzer",
+    page_icon='./Logo/SRA_Logo.ico',
+)
+
+def course_recommender(course_list):
+    st.subheader("**Courses & Certificates🎓 Recommendations**")
+    c = 0
+    rec_course = []
+    no_of_reco = st.slider('Choose Number of Course Recommendations:', 1, 10, 4)
+    random.shuffle(course_list)
+    for c_name, c_link in course_list:
+        c += 1
+        st.markdown(f"({c}) [{c_name}]({c_link})")
+        rec_course.append(c_name)
+        if c == no_of_reco:
+            break
+    return rec_course
 
 run()
