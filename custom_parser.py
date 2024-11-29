@@ -3,8 +3,8 @@ import re
 from spacy.matcher import Matcher
 import nltk
 from nltk.corpus import stopwords
-from pdfminer.high_level import extract_text
-from pdfminer.layout import LAParams
+from pdfminer.six.high_level import extract_text
+from pdfminer.six.layout import LAParams
 import io
 import docx2txt
 from typing import Optional
