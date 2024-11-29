@@ -1,47 +1,44 @@
 import streamlit as st
 import nltk
 import spacy
+from pathlib import Path
+import sklearn
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Download required NLTK data
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('averaged_perceptron_tagger')
 nltk.download('maxent_ne_chunker')
 nltk.download('words')
+
+# Load spaCy model
 custom_nlp = spacy.load("en_core_web_sm")
 
-
 import pandas as pd
-import base64, random
-import time, datetime
+import base64
+from datetime import datetime
 from custom_parser import CustomResumeParser
-from pdfminer3.layout import LAParams, LTTextBox
-from pdfminer3.pdfpage import PDFPage
-from pdfminer3.pdfinterp import PDFResourceManager
-from pdfminer3.pdfinterp import PDFPageInterpreter
-from pdfminer3.converter import TextConverter
-import io, random
+from pdfminer.layout import LAParams
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfinterp import PDFResourceManager
+from pdfminer.pdfinterp import PDFPageInterpreter
+from pdfminer.converter import TextConverter
+import io
 from streamlit_tags import st_tags
 from PIL import Image
 import pymysql
 from Courses import ds_course, web_course, android_course, ios_course, uiux_course, resume_videos, interview_videos
 import plotly.express as px
+import docx2txt
 
-def fetch_yt_video(link):
-    # video = pafy.new(link)
-    # return video.title
-    pass
-
-
-def get_table_download_link(df, filename, text):
-    """Generates a link allowing the data in a given panda dataframe to be downloaded
-    in:  dataframe
-    out: href string
-    """
+def get_table_download_link(df: pd.DataFrame, filename: str, text: str) -> str:
+    """Generates a link allowing the data in a given panda dataframe to be downloaded"""
     csv = df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()  # some strings <-> bytes conversions necessary here
-    # href = f'<a href="data:file/csv;base64,{b64}">Download Report</a>'
+    b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
     return href
-
 
 def pdf_reader(file):
     resource_manager = PDFResourceManager()
@@ -66,7 +63,7 @@ def show_pdf(file_path):
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
     # pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf">'
-    pdf_display = F'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf"></iframe>'
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
 
 
@@ -85,20 +82,33 @@ def course_recommender(course_list):
     return rec_course
 
 
-connection = pymysql.connect(host='localhost', user='root', password='')
-cursor = connection.cursor()
+# Database connection - Make it optional
+try:
+    connection = pymysql.connect(
+        host=st.secrets.get("DB_HOST", "localhost"),
+        user=st.secrets.get("DB_USER", "root"),
+        password=st.secrets.get("DB_PASSWORD", ""),
+        database=st.secrets.get("DB_NAME", "sra")
+    )
+    cursor = connection.cursor()
+    st.success("Database connected successfully!")
+except Exception as e:
+    connection = None
+    cursor = None
+    st.warning("Database connection failed. The app will work without saving data.")
 
 
 def insert_data(name, email, res_score, timestamp, no_of_pages, reco_field, cand_level, skills, recommended_skills,
                 courses):
-    DB_table_name = 'user_data'
-    insert_sql = "insert into " + DB_table_name + """
-    values (0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
-    rec_values = (
-    name, email, str(res_score), timestamp, str(no_of_pages), reco_field, cand_level, skills, recommended_skills,
-    courses)
-    cursor.execute(insert_sql, rec_values)
-    connection.commit()
+    if connection is not None:
+        DB_table_name = 'user_data'
+        insert_sql = "insert into " + DB_table_name + """
+        values (0,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+        rec_values = (
+        name, email, str(res_score), timestamp, str(no_of_pages), reco_field, cand_level, skills, recommended_skills,
+        courses)
+        cursor.execute(insert_sql, rec_values)
+        connection.commit()
 
 
 st.set_page_config(
@@ -119,27 +129,28 @@ def run():
     st.image(img)
 
     # Create the DB
-    db_sql = """CREATE DATABASE IF NOT EXISTS SRA;"""
-    cursor.execute(db_sql)
-    connection.select_db("sra")
+    if connection is not None:
+        db_sql = """CREATE DATABASE IF NOT EXISTS SRA;"""
+        cursor.execute(db_sql)
+        connection.select_db("sra")
 
-    # Create table
-    DB_table_name = 'user_data'
-    table_sql = "CREATE TABLE IF NOT EXISTS " + DB_table_name + """
-                    (ID INT NOT NULL AUTO_INCREMENT,
-                     Name varchar(100) NOT NULL,
-                     Email_ID VARCHAR(50) NOT NULL,
-                     resume_score VARCHAR(8) NOT NULL,
-                     Timestamp VARCHAR(50) NOT NULL,
-                     Page_no VARCHAR(5) NOT NULL,
-                     Predicted_Field VARCHAR(25) NOT NULL,
-                     User_level VARCHAR(30) NOT NULL,
-                     Actual_skills VARCHAR(300) NOT NULL,
-                     Recommended_skills VARCHAR(300) NOT NULL,
-                     Recommended_courses VARCHAR(600) NOT NULL,
-                     PRIMARY KEY (ID));
-                    """
-    cursor.execute(table_sql)
+        # Create table
+        DB_table_name = 'user_data'
+        table_sql = "CREATE TABLE IF NOT EXISTS " + DB_table_name + """
+                        (ID INT NOT NULL AUTO_INCREMENT,
+                         Name varchar(100) NOT NULL,
+                         Email_ID VARCHAR(50) NOT NULL,
+                         resume_score VARCHAR(8) NOT NULL,
+                         Timestamp VARCHAR(50) NOT NULL,
+                         Page_no VARCHAR(5) NOT NULL,
+                         Predicted_Field VARCHAR(25) NOT NULL,
+                         User_level VARCHAR(30) NOT NULL,
+                         Actual_skills VARCHAR(300) NOT NULL,
+                         Recommended_skills VARCHAR(300) NOT NULL,
+                         Recommended_courses VARCHAR(600) NOT NULL,
+                         PRIMARY KEY (ID));
+                        """
+        cursor.execute(table_sql)
     if choice == 'Normal User':
         # st.markdown('''<h4 style='text-align: left; color: #d73b5c;'>* Upload your resume, and get smart recommendation based on it."</h4>''',
         #             unsafe_allow_html=True)
@@ -292,9 +303,9 @@ def run():
 
                 #
                 ## Insert into table
-                ts = time.time()
-                cur_date = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
-                cur_time = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+                ts = datetime.now()
+                cur_date = ts.strftime('%Y-%m-%d')
+                cur_time = ts.strftime('%H:%M:%S')
                 timestamp = str(cur_date + '_' + cur_time)
 
                 ### Resume writing recommendation
@@ -371,9 +382,10 @@ def run():
                     "** Note: This score is calculated based on the content that you have added in your Resume. **")
                 st.balloons()
 
-                insert_data(resume_data['name'], resume_data['email'], str(resume_score), timestamp,
-                            str(resume_data['no_of_pages']), reco_field, cand_level, str(resume_data['skills']),
-                            str(recommended_skills), str(rec_course))
+                if connection is not None:
+                    insert_data(resume_data['name'], resume_data['email'], str(resume_score), timestamp,
+                                str(resume_data['no_of_pages']), reco_field, cand_level, str(resume_data['skills']),
+                                str(recommended_skills), str(rec_course))
 
                 ## Resume writing video
                 st.header("**Resume Writing Tips💡**")
@@ -390,7 +402,8 @@ def run():
                 * [Resume Templates](https://www.canva.com/resumes/templates/)
                 """)
 
-                connection.commit()
+                if connection is not None:
+                    connection.commit()
             else:
                 st.error('Something went wrong..')
     else:
@@ -404,49 +417,50 @@ def run():
             if ad_user == 'Admin' and ad_password == '9632':
                 st.success("Welcome Dear Admin")
                 # Display Data
-                cursor.execute('''SELECT*FROM user_data''')
-                data = cursor.fetchall()
-                st.header("**User's👨‍💻 Data**")
-                df = pd.DataFrame(data, columns=['ID', 'Name', 'Email', 'Resume Score', 'Timestamp', 'Total Page',
-                                                 'Predicted Field', 'User Level', 'Actual Skills', 'Recommended Skills',
-                                                 'Recommended Course'])
-                st.dataframe(df)
-                st.markdown(get_table_download_link(df, 'User_Data.csv', 'Download Report'), unsafe_allow_html=True)
-                ## Admin Side Data
-                query = 'select * from user_data;'
-                plot_data = pd.read_sql(query, connection)
+                if connection is not None:
+                    cursor.execute('''SELECT*FROM user_data''')
+                    data = cursor.fetchall()
+                    st.header("**User's👨‍💻 Data**")
+                    df = pd.DataFrame(data, columns=['ID', 'Name', 'Email', 'Resume Score', 'Timestamp', 'Total Page',
+                                                     'Predicted Field', 'User Level', 'Actual Skills', 'Recommended Skills',
+                                                     'Recommended Course'])
+                    st.dataframe(df)
+                    st.markdown(get_table_download_link(df, 'User_Data.csv', 'Download Report'), unsafe_allow_html=True)
+                    ## Admin Side Data
+                    query = 'select * from user_data;'
+                    plot_data = pd.read_sql(query, connection)
 
-                ## Pie chart for predicted field recommendations
-                labels = plot_data.Predicted_Field.unique()
-                print(labels)
-                values = plot_data.Predicted_Field.value_counts()
-                print(values)
-                st.subheader("📈 **Pie-Chart for Predicted Field Recommendations**")
-                
-                # Create a DataFrame for the pie chart
-                pie_chart_data = pd.DataFrame({
-                    'Field': labels,
-                    'Count': values
-                })
-                
-                fig = px.pie(pie_chart_data, values='Count', names='Field', 
-                           title='Predicted Field according to the Skills')
-                st.plotly_chart(fig)
+                    ## Pie chart for predicted field recommendations
+                    labels = plot_data.Predicted_Field.unique()
+                    print(labels)
+                    values = plot_data.Predicted_Field.value_counts()
+                    print(values)
+                    st.subheader("📈 **Pie-Chart for Predicted Field Recommendations**")
+                    
+                    # Create a DataFrame for the pie chart
+                    pie_chart_data = pd.DataFrame({
+                        'Field': labels,
+                        'Count': values
+                    })
+                    
+                    fig = px.pie(pie_chart_data, values='Count', names='Field', 
+                               title='Predicted Field according to the Skills')
+                    st.plotly_chart(fig)
 
-                ### Pie chart for User's👨‍💻 Experienced Level
-                labels = plot_data.User_level.unique()
-                values = plot_data.User_level.value_counts()
-                st.subheader("📈 ** Pie-Chart for User's👨‍💻 Experienced Level**")
-                
-                # Create a DataFrame for the pie chart
-                pie_chart_data = pd.DataFrame({
-                    'Level': labels,
-                    'Count': values
-                })
-                
-                fig = px.pie(pie_chart_data, values='Count', names='Level', 
-                           title="Pie-Chart📈 for User's👨‍💻 Experienced Level")
-                st.plotly_chart(fig)
+                    ### Pie chart for User's👨‍💻 Experienced Level
+                    labels = plot_data.User_level.unique()
+                    values = plot_data.User_level.value_counts()
+                    st.subheader("📈 ** Pie-Chart for User's👨‍💻 Experienced Level**")
+                    
+                    # Create a DataFrame for the pie chart
+                    pie_chart_data = pd.DataFrame({
+                        'Level': labels,
+                        'Count': values
+                    })
+                    
+                    fig = px.pie(pie_chart_data, values='Count', names='Level', 
+                               title="Pie-Chart📈 for User's👨‍💻 Experienced Level")
+                    st.plotly_chart(fig)
 
 
             else:
